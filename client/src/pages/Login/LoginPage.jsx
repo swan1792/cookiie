@@ -14,23 +14,35 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.auth);
 
-  // Load reCAPTCHA v3 script
+  // Load reCAPTCHA v3 script — cleanup on unmount to remove badge from other pages
   useEffect(() => {
     if (!RECAPTCHA_SITE_KEY) return;
 
+    let scriptEl = null;
+
     if (window.grecaptcha && window.grecaptcha.ready) {
       setCaptchaReady(true);
-      return;
+    } else {
+      scriptEl = document.createElement('script');
+      scriptEl.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+      scriptEl.onload = () => {
+        window.grecaptcha.ready(() => {
+          setCaptchaReady(true);
+        });
+      };
+      document.head.appendChild(scriptEl);
     }
 
-    const script = document.createElement('script');
-    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
-    script.onload = () => {
-      window.grecaptcha.ready(() => {
-        setCaptchaReady(true);
-      });
+    return () => {
+      // Remove reCAPTCHA script
+      if (scriptEl) scriptEl.remove();
+      // Remove the grecaptcha badge overlay
+      const badge = document.querySelector('.grecaptcha-badge');
+      if (badge) badge.remove();
+      // Clean up global grecaptcha
+      delete window.grecaptcha;
+      setCaptchaReady(false);
     };
-    document.head.appendChild(script);
   }, []);
 
   const handleSubmit = async (e) => {
