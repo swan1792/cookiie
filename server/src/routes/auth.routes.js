@@ -60,8 +60,8 @@ router.post('/login', async (req, res) => {
       // Set HttpOnly cookie
       res.cookie(COOKIE_NAME, sessionId, {
         httpOnly: true,
-        secure: false,       // Set true in production with HTTPS
-        sameSite: 'Strict',
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Strict',
         maxAge: COOKIE_MAX_AGE,
         path: '/',
       });
