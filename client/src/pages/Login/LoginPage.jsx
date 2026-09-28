@@ -1,62 +1,66 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
-import { loginUser, clearError } from '../../redux/slices/authSlice';
+import { loginUser } from '../../redux/slices/authSlice';
 import { COOKIE_AUTH } from '../../utils/constants';
 
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
-console.log('🔑 reCAPTCHA Site Key:', RECAPTCHA_SITE_KEY ? RECAPTCHA_SITE_KEY.slice(0, 10) + '...' : 'NOT SET');
 
 const LoginPage = () => {
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('password123');
-  const [captchaReady, setCaptchaReady] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState(null);
+  const [captchaLoaded, setCaptchaLoaded] = useState(false);
+  const captchaRef = useRef(null);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.auth);
 
-  // Load reCAPTCHA v3 script
+  // Load reCAPTCHA v2 script and render widget
   useEffect(() => {
-    if (!RECAPTCHA_SITE_KEY) {
-      console.warn('⚠️ reCAPTCHA site key not found. Set VITE_RECAPTCHA_SITE_KEY in Vercel.');
-      return;
-    }
+    if (!RECAPTCHA_SITE_KEY) return;
 
-    // Skip if already loaded
-    if (window.grecaptcha && window.grecaptcha.ready) {
-      setCaptchaReady(true);
+    // If already loaded, render immediately
+    if (window.grecaptcha) {
+      renderWidget();
       return;
     }
 
     const script = document.createElement('script');
-    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
-    script.onload = () => {
-      window.grecaptcha.ready(() => {
-        console.log('✅ reCAPTCHA v3 ready');
-        setCaptchaReady(true);
-      });
+    script.src = 'https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit';
+    script.async = true;
+    script.defer = true;
+
+    window.onRecaptchaLoad = () => {
+      renderWidget();
     };
-    script.onerror = () => console.error('❌ Failed to load reCAPTCHA script');
+
     document.head.appendChild(script);
+
+    function renderWidget() {
+      if (captchaRef.current && !captchaLoaded) {
+        window.grecaptcha.render(captchaRef.current, {
+          sitekey: RECAPTCHA_SITE_KEY,
+          callback: (token) => {
+            setCaptchaToken(token);
+          },
+          'expired-callback': () => {
+            setCaptchaToken(null);
+          },
+        });
+        setCaptchaLoaded(true);
+      }
+    }
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Get reCAPTCHA v3 token
-    let recaptchaToken = null;
-    if (RECAPTCHA_SITE_KEY && captchaReady && window.grecaptcha) {
-      try {
-        recaptchaToken = await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'login' });
-        console.log('🤖 reCAPTCHA token obtained');
-      } catch (err) {
-        console.error('reCAPTCHA error:', err);
-      }
-    } else {
-      console.log('ℹ️ reCAPTCHA skipped:', { hasKey: !!RECAPTCHA_SITE_KEY, captchaReady });
+    if (RECAPTCHA_SITE_KEY && !captchaToken) {
+      return; // Don't submit without captcha
     }
 
-    const result = await dispatch(loginUser({ email, password, recaptchaToken }));
+    const result = await dispatch(loginUser({ email, password, recaptchaToken: captchaToken }));
     if (loginUser.fulfilled.match(result)) {
       navigate('/dashboard');
     }
@@ -92,9 +96,24 @@ const LoginPage = () => {
             />
           </div>
 
+          {/* reCAPTCHA v2 widget */}
+          {RECAPTCHA_SITE_KEY && (
+            <div style={styles.captchaWrapper}>
+              <div ref={captchaRef} id="recaptcha-widget"></div>
+            </div>
+          )}
+
           {error && <div style={styles.error}>{error}</div>}
 
-          <button type="submit" disabled={loading} style={styles.button}>
+          <button
+            type="submit"
+            disabled={loading || (RECAPTCHA_SITE_KEY && !captchaToken)}
+            style={{
+              ...styles.button,
+              opacity: loading || (RECAPTCHA_SITE_KEY && !captchaToken) ? 0.6 : 1,
+              cursor: loading || (RECAPTCHA_SITE_KEY && !captchaToken) ? 'not-allowed' : 'pointer',
+            }}
+          >
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
@@ -159,6 +178,11 @@ const styles = {
     borderRadius: '4px',
     fontSize: '14px',
     outline: 'none',
+  },
+  captchaWrapper: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginTop: '4px',
   },
   error: {
     padding: '10px',
