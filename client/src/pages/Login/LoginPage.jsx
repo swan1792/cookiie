@@ -5,23 +5,39 @@ import { loginUser, clearError } from '../../redux/slices/authSlice';
 import { COOKIE_AUTH } from '../../utils/constants';
 
 const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+console.log('🔑 reCAPTCHA Site Key:', RECAPTCHA_SITE_KEY ? RECAPTCHA_SITE_KEY.slice(0, 10) + '...' : 'NOT SET');
 
 const LoginPage = () => {
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('password123');
+  const [captchaReady, setCaptchaReady] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.auth);
 
   // Load reCAPTCHA v3 script
   useEffect(() => {
-    if (RECAPTCHA_SITE_KEY && !document.querySelector('script[src*="recaptcha"]')) {
-      const script = document.createElement('script');
-      script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
-      script.async = true;
-      script.defer = true;
-      document.head.appendChild(script);
+    if (!RECAPTCHA_SITE_KEY) {
+      console.warn('⚠️ reCAPTCHA site key not found. Set VITE_RECAPTCHA_SITE_KEY in Vercel.');
+      return;
     }
+
+    // Skip if already loaded
+    if (window.grecaptcha && window.grecaptcha.ready) {
+      setCaptchaReady(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+    script.onload = () => {
+      window.grecaptcha.ready(() => {
+        console.log('✅ reCAPTCHA v3 ready');
+        setCaptchaReady(true);
+      });
+    };
+    script.onerror = () => console.error('❌ Failed to load reCAPTCHA script');
+    document.head.appendChild(script);
   }, []);
 
   const handleSubmit = async (e) => {
@@ -29,13 +45,15 @@ const LoginPage = () => {
 
     // Get reCAPTCHA v3 token
     let recaptchaToken = null;
-    if (RECAPTCHA_SITE_KEY && window.grecaptcha) {
+    if (RECAPTCHA_SITE_KEY && captchaReady && window.grecaptcha) {
       try {
-        await window.grecaptcha.ready();
         recaptchaToken = await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'login' });
+        console.log('🤖 reCAPTCHA token obtained');
       } catch (err) {
         console.error('reCAPTCHA error:', err);
       }
+    } else {
+      console.log('ℹ️ reCAPTCHA skipped:', { hasKey: !!RECAPTCHA_SITE_KEY, captchaReady });
     }
 
     const result = await dispatch(loginUser({ email, password, recaptchaToken }));
