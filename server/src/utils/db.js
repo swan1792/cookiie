@@ -1,11 +1,32 @@
 const mysql = require('mysql2/promise');
 require('dotenv').config();
 
+// Railway exposes DB vars with different names depending on how the service is linked.
+// DATABASE_URL  — set when MySQL is linked as a service variable
+// MYSQL_URL     — alternative Railway variable name
+// MYSQLHOST etc — individual Railway MySQL vars
+const dbUrl = process.env.DATABASE_URL || process.env.MYSQL_URL;
+const dbHost = process.env.MYSQLHOST || process.env.DB_HOST;
+const dbUser = process.env.MYSQLUSER || process.env.DB_USER;
+const dbPass = process.env.MYSQLPASSWORD || process.env.DB_PASSWORD;
+const dbName = process.env.MYSQLDATABASE || process.env.DB_NAME;
+const dbPort = process.env.MYSQLPORT || process.env.DB_PORT;
+
+console.log('🔧 DB env check:', {
+  hasDATABASE_URL: !!process.env.DATABASE_URL,
+  hasMYSQL_URL: !!process.env.MYSQL_URL,
+  hasMYSQLHOST: !!process.env.MYSQLHOST,
+  dbHost,
+  dbUser,
+  dbName,
+  dbPort,
+});
+
 let poolConfig;
 
-if (process.env.DATABASE_URL) {
-  // Railway / cloud: parse the connection URL manually
-  const url = new URL(process.env.DATABASE_URL);
+if (dbUrl) {
+  // Parse connection URL
+  const url = new URL(dbUrl);
   poolConfig = {
     host: url.hostname,
     user: url.username,
@@ -16,27 +37,33 @@ if (process.env.DATABASE_URL) {
     connectionLimit: 10,
     queueLimit: 0,
   };
-} else {
-  // Local development
+} else if (dbHost) {
+  // Individual variables (Railway or local)
   poolConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'cookie_auth_test',
-    port: process.env.DB_PORT || 3306,
+    host: dbHost,
+    user: dbUser || 'root',
+    password: dbPass || '',
+    database: dbName || 'railway',
+    port: parseInt(dbPort) || 3306,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+  };
+} else {
+  // Local development fallback
+  poolConfig = {
+    host: 'localhost',
+    user: 'root',
+    password: '',
+    database: 'cookie_auth_test',
+    port: 3306,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
   };
 }
 
-console.log('🔧 DB config:', {
-  host: poolConfig.host,
-  port: poolConfig.port,
-  database: poolConfig.database,
-  user: poolConfig.user,
-  hasPassword: !!poolConfig.password,
-});
+console.log('🔧 DB connecting to:', poolConfig.host + ':' + poolConfig.port + '/' + poolConfig.database);
 
 const pool = mysql.createPool(poolConfig);
 
