@@ -17,6 +17,44 @@ const COOKIE_MAX_AGE = parseInt(process.env.COOKIE_MAX_AGE) || 28800000; // 8 ho
 const AUTH_MODE = process.env.AUTH_MODE || 'cookie';
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
+const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY;
+const RECAPTCHA_MIN_SCORE = 0.5;
+
+/**
+ * Verify reCAPTCHA v3 token with Google
+ * Returns { success: boolean, score: number }
+ */
+async function verifyRecaptcha(token, remoteIp) {
+  if (!RECAPTCHA_SECRET_KEY) {
+    // Skip verification in local dev (no secret key configured)
+    console.log('⚠️  reCAPTCHA skipped (no RECAPTCHA_SECRET_KEY)');
+    return { success: true, score: 1.0 };
+  }
+
+  try {
+    const params = new URLSearchParams({
+      secret: RECAPTCHA_SECRET_KEY,
+      response: token,
+      remoteip: remoteIp || '',
+    });
+
+    const response = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+      method: 'POST',
+      body: params,
+    });
+
+    const data = await response.json();
+    console.log(`🤖 reCAPTCHA result: success=${data.success}, score=${data.score}`);
+
+    return {
+      success: data.success && data.score >= RECAPTCHA_MIN_SCORE,
+      score: data.score || 0,
+    };
+  } catch (err) {
+    console.error('reCAPTCHA verification error:', err.message);
+    return { success: false, score: 0 };
+  }
+}
 
 /**
  * POST /api/auth/login
@@ -24,10 +62,20 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '8h';
  */
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, recaptchaToken } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // Verify reCAPTCHA
+    if (RECAPTCHA_SECRET_KEY && !recaptchaToken) {
+      return res.status(403).json({ error: 'reCAPTCHA token required' });
+    }
+
+    const captcha = await verifyRecaptcha(recaptchaToken, req.ip);
+    if (!captcha.success) {
+      return res.status(403).json({ error: 'reCAPTCHA verification failed. Please try again.' });
     }
 
     // Find user

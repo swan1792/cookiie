@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { loginUser, clearError } from '../../redux/slices/authSlice';
 import { COOKIE_AUTH } from '../../utils/constants';
+
+const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 
 const LoginPage = () => {
   const [email, setEmail] = useState('admin@example.com');
@@ -11,9 +13,32 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.auth);
 
+  // Load reCAPTCHA v3 script
+  useEffect(() => {
+    if (RECAPTCHA_SITE_KEY && !document.querySelector('script[src*="recaptcha"]')) {
+      const script = document.createElement('script');
+      script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const result = await dispatch(loginUser({ email, password }));
+
+    // Get reCAPTCHA v3 token
+    let recaptchaToken = null;
+    if (RECAPTCHA_SITE_KEY && window.grecaptcha) {
+      try {
+        await window.grecaptcha.ready();
+        recaptchaToken = await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'login' });
+      } catch (err) {
+        console.error('reCAPTCHA error:', err);
+      }
+    }
+
+    const result = await dispatch(loginUser({ email, password, recaptchaToken }));
     if (loginUser.fulfilled.match(result)) {
       navigate('/dashboard');
     }

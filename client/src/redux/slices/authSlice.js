@@ -7,9 +7,9 @@ import { saveState, removeState } from '../../utils/localStorage';
 
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
-  async ({ email, password }, { rejectWithValue }) => {
+  async ({ email, password, recaptchaToken }, { rejectWithValue }) => {
     try {
-      const response = await apiClient.post('/api/auth/login', { email, password });
+      const response = await apiClient.post('/api/auth/login', { email, password, recaptchaToken });
       return response.data;
     } catch (error) {
       return rejectWithValue(error.response?.data || { message: 'Login failed' });
