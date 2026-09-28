@@ -4,9 +4,14 @@ require('dotenv').config();
 let poolConfig;
 
 if (process.env.DATABASE_URL) {
-  // Railway / cloud: use connection URL
+  // Railway / cloud: parse the connection URL manually
+  const url = new URL(process.env.DATABASE_URL);
   poolConfig = {
-    uri: process.env.DATABASE_URL,
+    host: url.hostname,
+    user: url.username,
+    password: url.password,
+    database: url.pathname.replace('/', ''),
+    port: parseInt(url.port) || 3306,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
@@ -24,6 +29,14 @@ if (process.env.DATABASE_URL) {
     queueLimit: 0,
   };
 }
+
+console.log('🔧 DB config:', {
+  host: poolConfig.host,
+  port: poolConfig.port,
+  database: poolConfig.database,
+  user: poolConfig.user,
+  hasPassword: !!poolConfig.password,
+});
 
 const pool = mysql.createPool(poolConfig);
 
