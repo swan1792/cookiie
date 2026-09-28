@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { loginUser } from '../../redux/slices/authSlice';
@@ -9,58 +9,43 @@ const RECAPTCHA_SITE_KEY = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 const LoginPage = () => {
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('password123');
-  const [captchaToken, setCaptchaToken] = useState(null);
-  const [captchaLoaded, setCaptchaLoaded] = useState(false);
-  const captchaRef = useRef(null);
+  const [captchaReady, setCaptchaReady] = useState(false);
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, error } = useSelector((state) => state.auth);
 
-  // Load reCAPTCHA v2 script and render widget
+  // Load reCAPTCHA v3 script
   useEffect(() => {
     if (!RECAPTCHA_SITE_KEY) return;
 
-    // If already loaded, render immediately
-    if (window.grecaptcha) {
-      renderWidget();
+    if (window.grecaptcha && window.grecaptcha.ready) {
+      setCaptchaReady(true);
       return;
     }
 
     const script = document.createElement('script');
-    script.src = 'https://www.google.com/recaptcha/api.js?onload=onRecaptchaLoad&render=explicit';
-    script.async = true;
-    script.defer = true;
-
-    window.onRecaptchaLoad = () => {
-      renderWidget();
+    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+    script.onload = () => {
+      window.grecaptcha.ready(() => {
+        setCaptchaReady(true);
+      });
     };
-
     document.head.appendChild(script);
-
-    function renderWidget() {
-      if (captchaRef.current && !captchaLoaded) {
-        window.grecaptcha.render(captchaRef.current, {
-          sitekey: RECAPTCHA_SITE_KEY,
-          callback: (token) => {
-            setCaptchaToken(token);
-          },
-          'expired-callback': () => {
-            setCaptchaToken(null);
-          },
-        });
-        setCaptchaLoaded(true);
-      }
-    }
   }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (RECAPTCHA_SITE_KEY && !captchaToken) {
-      return; // Don't submit without captcha
+    let recaptchaToken = null;
+    if (RECAPTCHA_SITE_KEY && captchaReady && window.grecaptcha) {
+      try {
+        recaptchaToken = await window.grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'login' });
+      } catch (err) {
+        console.error('reCAPTCHA error:', err);
+      }
     }
 
-    const result = await dispatch(loginUser({ email, password, recaptchaToken: captchaToken }));
+    const result = await dispatch(loginUser({ email, password, recaptchaToken }));
     if (loginUser.fulfilled.match(result)) {
       navigate('/dashboard');
     }
@@ -96,24 +81,9 @@ const LoginPage = () => {
             />
           </div>
 
-          {/* reCAPTCHA v2 widget */}
-          {RECAPTCHA_SITE_KEY && (
-            <div style={styles.captchaWrapper}>
-              <div ref={captchaRef} id="recaptcha-widget"></div>
-            </div>
-          )}
-
           {error && <div style={styles.error}>{error}</div>}
 
-          <button
-            type="submit"
-            disabled={loading || (RECAPTCHA_SITE_KEY && !captchaToken)}
-            style={{
-              ...styles.button,
-              opacity: loading || (RECAPTCHA_SITE_KEY && !captchaToken) ? 0.6 : 1,
-              cursor: loading || (RECAPTCHA_SITE_KEY && !captchaToken) ? 'not-allowed' : 'pointer',
-            }}
-          >
+          <button type="submit" disabled={loading} style={styles.button}>
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
@@ -178,11 +148,6 @@ const styles = {
     borderRadius: '4px',
     fontSize: '14px',
     outline: 'none',
-  },
-  captchaWrapper: {
-    display: 'flex',
-    justifyContent: 'center',
-    marginTop: '4px',
   },
   error: {
     padding: '10px',
